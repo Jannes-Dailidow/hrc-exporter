@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gehaltsanalyse</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f5f2;
+  --surface-1: #fcfcfb;
+  --border: #e3e1db;
+  --grid: #ebe9e4;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7a7974;
+  --series-1: #2a78d6; /* Tarifentgelt */
+  --series-2: #eb6834; /* Übertarifliche Zulage */
+  --series-3: #1baf7a; /* Ausbildungsvergütung / Sonstiges */
+  --accent-bg: #eef4fc;
+  --warn: #b25e00;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #121211; --surface-1: #1a1a19; --border: #2e2d2b; --grid: #2a2a28;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --accent-bg: #1b2533; --warn: #e8a24a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121211; --surface-1: #1a1a19; --border: #2e2d2b; --grid: #2a2a28;
+  --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --accent-bg: #1b2533; --warn: #e8a24a;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text-primary); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 32px 16px 64px; }
+h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.01em; }
+h2 { font-size: 20px; margin: 40px 0 8px; }
+h3 { font-size: 16px; margin: 20px 0 6px; }
+p, li { color: var(--text-secondary); }
+.sub { color: var(--text-muted); margin: 0 0 24px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin: 12px 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.kpi .label { font-size: 13px; color: var(--text-muted); }
+.kpi .value { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.kpi .note { font-size: 13px; color: var(--text-secondary); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--text-secondary); margin-bottom: 8px; }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font-size: 11px; fill: var(--text-muted); font-variant-numeric: tabular-nums; }
+.chart text.lbl { fill: var(--text-secondary); font-weight: 600; }
+.tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.12); max-width: 340px; opacity: 0; transition: opacity .1s; z-index: 2; }
+.tip b { color: var(--text-primary); }
+.tip .row { display: flex; justify-content: space-between; gap: 16px; color: var(--text-secondary); white-space: nowrap; }
+.tip .row i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; background: var(--c); }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+th { color: var(--text-muted); font-weight: 600; position: sticky; top: 0; background: var(--surface-1); }
+td:first-child, th:first-child, td.l, th.l { text-align: left; }
+td.note { text-align: left; white-space: normal; color: var(--text-secondary); min-width: 240px; }
+tr.year td { font-weight: 650; color: var(--text-primary); background: var(--accent-bg); }
+.neg { color: var(--series-2); }
+.pos { color: var(--series-1); }
+details summary { cursor: pointer; color: var(--text-secondary); font-size: 14px; margin-top: 8px; }
+.callout { border-left: 3px solid var(--series-2); padding: 8px 12px; background: var(--accent-bg); border-radius: 4px; }
+.callout p { margin: 4px 0; }
+.warn { border-left-color: var(--warn); }
+.small { font-size: 13px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<main>
+{{- $first := .First }}{{ $last := .Last }}
+  <h1>Gehaltsanalyse {{ $first.Period.Year }}–{{ $last.Period.Year }}</h1>
+  <p class="sub">Auswertung von {{ len .Months }} Entgeltabrechnungen, {{ $first.Period.Label }} bis {{ $last.Period.Label }} · erzeugt am {{ date .Generated }}</p>
+
+{{- if .Warnings }}
+  <div class="callout warn">
+    <p><b>Warnungen beim Einlesen</b>: Diese Abrechnungen wurden eventuell nicht vollständig erkannt.</p>
+    <ul>{{ range .Warnings }}<li>{{ . }}</li>{{ end }}</ul>
+  </div>
+{{- end }}
+
+{{- with .Summary }}
+  <div class="kpis">
+    <div class="card kpi"><div class="label">Grundgehalt aktuell (Tarif + ÜT)</div><div class="value">{{ eur .Current.Base }} €</div><div class="note">{{ .Current.Period.Label }} · Gruppe/Stufe {{ .Current.Group }}</div></div>
+    <div class="card kpi"><div class="label">Steigerung seit {{ .Start.Period.Label }}</div><div class="value">{{ signed .Gain }} €</div><div class="note">von {{ eur .Start.Base }} € · {{ pct .GainPercent }}</div></div>
+    <div class="card kpi"><div class="label">Mit der ÜT verrechnet</div><div class="value">{{ eur .Offset }} €</div><div class="note">von {{ eur .TariffRise }} € Tarifsteigerung</div></div>
+    <div class="card kpi"><div class="label">Übertarifliche Zulage aktuell</div><div class="value">{{ eur .Current.AboveTariff }} €</div><div class="note">Höchststand {{ eur .AboveTariffPeak }} € ({{ .PeakFrom.Short }}{{ if ne .PeakFrom .PeakTo }}–{{ .PeakTo.Short }}{{ end }})</div></div>
+  </div>
+{{- end }}
+
+  <h2>Grundgehalt pro Monat</h2>
+  <p>Tarifentgelt und übertarifliche Zulage (ÜT) übereinander. Rückwirkende Korrekturen späterer Abrechnungen stehen in dem Monat, für den sie gelten.</p>
+  <div class="card">
+    <div class="legend"><span style="--c:var(--series-1)">Tarifentgelt</span><span style="--c:var(--series-2)">Übertarifliche Zulage</span><span style="--c:var(--series-3)">Ausbildungsvergütung</span></div>
+    <div class="chart" id="c-monthly"></div>
+  </div>
+
+{{- if and .Events .Summary }}{{ with .Summary }}
+  <h2>Was bei jeder Änderung passiert ist</h2>
+  <p>Jede Änderung des Grundgehalts seit {{ .Start.Period.Label }}: Δ Tarifentgelt und Δ ÜT. Die Zahl über jeder Gruppe ist, was am Ende tatsächlich mehr ankam.</p>
+  <div class="card">
+    <div class="legend"><span style="--c:var(--series-1)">Δ Tarifentgelt</span><span style="--c:var(--series-2)">Δ Übertarifliche Zulage</span></div>
+    <div class="chart" id="c-events"></div>
+  </div>
+
+  <div class="callout">
+    <p><b>Mit der ÜT verrechnet</b> ({{ eur .Offset }} €):
+      {{ range $i, $e := .OffsetEvents }}{{ if $i }}, {{ end }}{{ $e.Month.Period.Short }} {{ $e.Title }} ({{ eur $e.Offset }} von {{ eur $e.DeltaTariff }}){{ end }}.</p>
+    <p><b>Voll weitergegeben</b>:
+      {{ range $i, $e := .FullEvents }}{{ if $i }}, {{ end }}{{ $e.Month.Period.Short }} {{ $e.Title }} ({{ signed $e.DeltaTariff }}){{ else }}keine{{ end }}.</p>
+    <p><b>ÜT-Erhöhungen</b> ({{ eur .AboveTariffRaises }} €):
+      {{ range $i, $e := .AboveTariffRaiseEvents }}{{ if $i }}, {{ end }}{{ $e.Month.Period.Short }} ({{ signed $e.DeltaAboveTariff }}){{ else }}keine{{ end }}.</p>
+    <p><b>Rechnung:</b> {{ eur .TariffRise }} € Tarifsteigerung − {{ eur .Offset }} € Verrechnung + {{ eur .AboveTariffRaises }} € ÜT-Erhöhungen = <b>{{ signed .Gain }} €</b>.</p>
+  </div>
+{{- end }}{{ end }}
+
+  <h2>Jahresbrutto</h2>
+  <p>Gesamtbrutto pro Jahr (inklusive späterer Korrekturen), aufgeteilt in laufendes Grundgehalt, Urlaubs- und Weihnachtsgeld und Sonstiges (Prämien, Zulagen, vermögenswirksame Leistungen, Zuschläge …).</p>
+  <div class="card">
+    <div class="legend"><span style="--c:var(--series-1)">Laufendes Grundgehalt</span><span style="--c:var(--series-2)">Urlaubs- &amp; Weihnachtsgeld</span><span style="--c:var(--series-3)">Sonstiges</span></div>
+    <div class="chart" id="c-yearly"></div>
+  </div>
+
+  <h2>Tarifgruppen und Stufen erklärt</h2>
+  <p>Auf der Abrechnung steht oben rechts <b>„Tarifgr./-stufe“</b>, etwa <code>{{ .Last.Group }}</code>. Die erste Zahl ist die <b>Gruppe</b>, die zweite die <b>Stufe</b> innerhalb der Gruppe.</p>
+  <ul>
+    <li><b>AZ/n</b>: Auszubildende im n-ten Ausbildungsjahr. Die Ausbildungsvergütung ist tariflich fest, eine ÜT gibt es nicht.</li>
+    <li><b>Gruppen</b>: richten sich nach der <b>Tätigkeit</b> (Anforderungen, Selbstständigkeit, Verantwortung). Je höher die Zahl, desto höher das Tarifentgelt.</li>
+    <li><b>Stufen</b>: Steigerungen innerhalb der Gruppe, typischerweise nach Jahren in der Gruppe bzw. Berufserfahrung. Wie viele Stufen es gibt, steht in der Entgelttabelle des Tarifvertrags.</li>
+    <li><b>Tarifentgelt</b>: der Betrag aus der Entgelttabelle für Gruppe/Stufe. Er steigt bei Tariferhöhungen für alle automatisch.</li>
+    <li><b>Übertarifliche Zulage (ÜT)</b>: freiwilliger Aufschlag des Arbeitgebers über dem Tarif. Sie ist in der Regel <b>„anrechenbar“</b>: Steigt das Tarifentgelt, darf der Arbeitgeber die ÜT um denselben Betrag kürzen, sodass die Summe gleich bleibt.</li>
+  </ul>
+{{- if .Events }}
+  <p>Deine Wechsel: {{ range .Events }}{{ if .IsRegrouping }}<b>{{ .Month.Period.Label }}</b> {{ .Title }} ({{ signed .DeltaTariff }} Tarif); {{ end }}{{ end }}</p>
+{{- end }}
+
+  <h3>Welcher Tarif?</h3>
+  <p>Allgemeine Tariferhöhungen laut Abrechnung:
+    {{ range .Events }}{{ if .IsTariffIncrease }}<b>{{ .Month.Period.Label }}</b> {{ pct .TariffPercent }}; {{ end }}{{ end }}
+    Welcher Tarifvertrag gilt, steht verbindlich im Arbeitsvertrag; prüfe die Werte gegen die offizielle Entgelttabelle des Tarifvertrags.</p>
+
+  <h3>Tabellenwerte, die auf deinen Abrechnungen vorkommen</h3>
+  <div class="card tablewrap">
+    <table>
+      <thead><tr><th class="l">Gruppe/Stufe</th>{{ range .Tariff.Columns }}<th>{{ .Label }}</th>{{ end }}</tr></thead>
+      <tbody>
+      {{- $cols := .Tariff.Columns }}
+      {{- range .Tariff.Groups }}{{ $g := . }}
+        <tr><td>{{ $g }}</td>{{ range $cols }}<td>{{ cell . $g }}</td>{{ end }}</tr>
+      {{- end }}
+      </tbody>
+    </table>
+    <p class="small">Nur Werte, die tatsächlich (inklusive Rückrechnungen) auf den Abrechnungen stehen. Eine neue Spalte beginnt mit jeder allgemeinen Tariferhöhung.</p>
+  </div>
+
+  <h3>Einordnung der Verrechnungen</h3>
+  <ul>
+    <li>Die Verrechnung von Tariferhöhungen mit einer anrechenbaren ÜT ist grundsätzlich zulässig, wenn der Arbeitsvertrag die ÜT nicht als „tariffest“ oder „nicht anrechenbar“ zusagt. <b>Schau in deinen Arbeitsvertrag bzw. in die Zusage zur ÜT.</b></li>
+    <li>Gibt es einen Betriebsrat, hat er bei der <i>Verteilung</i> von Anrechnungen mitzubestimmen (§ 87 Abs. 1 Nr. 10 BetrVG), wenn sich dadurch die Verteilungsgrundsätze ändern. Eine einheitliche, vollständige Anrechnung bei allen ist dagegen meist mitbestimmungsfrei.</li>
+    <li><b>Puffer:</b> Die ÜT steht bei {{ eur .Last.AboveTariff }} €. Beim nächsten Stufenaufstieg kann höchstens dieser Betrag verrechnet werden; danach kommt jede weitere Steigerung voll an.</li>
+  </ul>
+  <p class="small">Keine Rechtsberatung. Bei konkreten Fragen helfen Betriebsrat, Gewerkschaft oder die Personalabteilung.</p>
+
+  <h2>Einmalzahlungen und Sonderposten</h2>
+  <div class="card tablewrap">
+    <table>
+      <thead><tr><th class="l">Monat</th><th class="l">Lohnart</th><th>Betrag</th></tr></thead>
+      <tbody>{{ range .OneOffs }}<tr><td>{{ .Period.Label }}</td><td class="l">{{ .Name }}</td><td>{{ eur2 .Amount }} €</td></tr>{{ end }}</tbody>
+    </table>
+    <p class="small">Wiederkehrende Posten erscheinen nur beim ersten Auftreten bzw. bei einer Betragsänderung.</p>
+  </div>
+
+{{- if .Notices }}
+  <h3>Mitteilungen auf den Abrechnungen</h3>
+  {{- range .Notices }}
+  <div class="card"><b>{{ .Period.Label }}</b><p>{{ .Text }}</p></div>
+  {{- end }}
+{{- end }}
+
+  <h2>Alle Monate</h2>
+  <details open>
+    <summary>Monatstabelle ein-/ausblenden</summary>
+    <div class="card tablewrap" style="max-height:620px">
+      <table>
+        <thead><tr><th class="l">Monat</th><th>Gr.</th><th>Azubi</th><th>Tarif</th><th>ÜT</th><th>Summe</th><th>Δ</th><th>Gesamtbrutto</th><th>Ges. Netto</th><th>Auszahlung</th><th class="l">Notiz</th></tr></thead>
+        <tbody>
+        {{- range $m := .Months }}
+          {{- if $m.NewYear }}<tr class="year"><td colspan="11">{{ $m.Period.Year }}</td></tr>{{ end }}
+          {{- $d := $m.Delta }}
+          <tr><td>{{ $m.Period.Label }}</td><td>{{ $m.Group }}</td><td>{{ if $m.Trainee }}{{ eur2 $m.Trainee }}{{ end }}</td><td>{{ if $m.Tariff }}{{ eur2 $m.Tariff }}{{ end }}</td><td>{{ if $m.Tariff }}{{ eur2 $m.AboveTariff }}{{ end }}</td><td><b>{{ eur2 $m.Base }}</b></td><td class="{{ if gt $d 0 }}pos{{ else if lt $d 0 }}neg{{ end }}">{{ if $d }}{{ signed $d }}{{ end }}</td><td>{{ eur2 $m.Gross }}</td><td>{{ eur2 $m.Net }}</td><td>{{ eur2 $m.Payout }}</td><td class="note">{{ join $m.Notes "; " }}</td></tr>
+        {{- end }}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  <p class="small">Tarif/ÜT: inklusive späterer Rückrechnungen. Gesamtbrutto, gesetzliches Netto und Auszahlung: wie auf der jeweiligen Abrechnung gedruckt.</p>
+</main>
+
+<div class="tip" id="tip"></div>
+
+<script>
+const DATA = {{ .Charts }};
+const M = DATA.months, EVENTS = DATA.events, YEARS = DATA.years;
+
+const fmt = (v, d = 2) => v.toLocaleString("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d });
+const eur = v => fmt(v) + " €";
+const signed = v => (v > 0 ? "+" : v < 0 ? "−" : "±") + fmt(Math.abs(v), Math.abs(v) % 1 ? 2 : 0);
+const NS = "http://www.w3.org/2000/svg";
+const el = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const tip = document.getElementById("tip");
+function showTip(evt, html) {
+  tip.innerHTML = html; tip.style.opacity = 1;
+  const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = evt.pageX + pad, y = evt.pageY - h - pad;
+  if (x + w > window.scrollX + document.documentElement.clientWidth - 8) x = evt.pageX - w - pad;
+  if (y < window.scrollY + 8) y = evt.pageY + pad;
+  tip.style.left = x + "px"; tip.style.top = y + "px";
+}
+const hideTip = () => { tip.style.opacity = 0; };
+const row = (c, label, v) => `<div class="row"><span><i style="--c:var(${c})"></i>${label}</span><b>${v}</b></div>`;
+const plainRow = (label, v) => `<div class="row"><span>${label}</span><b>${v}</b></div>`;
+
+// Rounded bar path anchored to the baseline (radius only on the data end).
+function barPath(x, y0, w, y1, r = 4) {
+  const top = Math.min(y0, y1), bot = Math.max(y0, y1), h = bot - top;
+  if (h <= 0) return "";
+  r = Math.min(r, h, w / 2);
+  if (y1 <= y0)
+    return `M${x},${bot}V${top + r}Q${x},${top} ${x + r},${top}H${x + w - r}Q${x + w},${top} ${x + w},${top + r}V${bot}Z`;
+  return `M${x},${top}V${bot - r}Q${x},${bot} ${x + r},${bot}H${x + w - r}Q${x + w},${bot} ${x + w},${bot - r}V${top}Z`;
+}
+// One stacked segment: the top one gets the rounded data end, lower ones leave a 2px surface gap.
+function stackSeg(svg, c, x, w, y0, y1, isTop) {
+  if (isTop) el("path", { d: barPath(x, y0, w, y1, Math.min(4, w / 2)), fill: `var(${c})` }, svg);
+  else el("rect", { x, y: y1 + 2, width: w, height: Math.max(0, y0 - y1 - 2), fill: `var(${c})` }, svg);
+}
+function niceStep(range, n) {
+  const step0 = range / n, mag = 10 ** Math.floor(Math.log10(step0));
+  return [1, 2, 2.5, 5, 10].map(s => s * mag).find(s => s >= step0);
+}
+function niceMax(v, n = 5) { const s = niceStep(v, n); return Math.ceil(v * 1.06 / s) * s; }
+function frame(id, H) {
+  const host = document.getElementById(id);
+  if (!host) return null;
+  host.innerHTML = "";
+  const W = Math.max(320, host.clientWidth);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, host);
+  return { svg, W, H };
+}
+const base = d => d.azubi + d.tarif + d.ut;
+
+function drawMonthly() {
+  const f = frame("c-monthly", 320); if (!f) return;
+  const { svg, W, H } = f;
+  const m = { l: 44, r: 8, t: 12, b: 28 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const ymax = niceMax(Math.max(...M.map(base))), y = v => m.t + ih - (v / ymax) * ih;
+  const step = niceStep(ymax, 5);
+  for (let v = 0; v <= ymax + 1e-9; v += step) {
+    el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: "var(--grid)" }, svg);
+    el("text", { x: m.l - 6, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = fmt(v, 0);
+  }
+  const bw = iw / M.length, gap = Math.min(2, bw * 0.25);
+  M.forEach((d, i) => {
+    const x = m.l + i * bw + gap / 2, w = bw - gap;
+    const segs = [["--series-3", d.azubi], ["--series-1", d.tarif], ["--series-2", d.ut]].filter(s => s[1] > 0);
+    let acc = 0;
+    segs.forEach(([c, v], j) => stackSeg(svg, c, x, w, y(acc), y(acc += v), j === segs.length - 1));
+    if (d.m.endsWith("-01") || i === 0) {
+      el("line", { x1: m.l + i * bw, x2: m.l + i * bw, y1: m.t + ih, y2: m.t + ih + 4, stroke: "var(--text-muted)" }, svg);
+      el("text", { x: m.l + i * bw + 2, y: H - 8 }, svg).textContent = d.m.slice(0, 4);
+    }
+    const hit = el("rect", { x: m.l + i * bw, y: m.t, width: bw, height: ih, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => showTip(e,
+      `<b>${d.m.slice(5)}/${d.m.slice(0, 4)}</b> · ${esc(d.grp)}<br>` +
+      (d.azubi ? row("--series-3", "Ausbildungsverg.", eur(d.azubi)) : "") +
+      (d.tarif ? row("--series-1", "Tarifentgelt", eur(d.tarif)) : "") +
+      (d.tarif ? row("--series-2", "Übertarifl. Zulage", eur(d.ut)) : "") +
+      plainRow("Summe", eur(base(d))) + (d.note ? `<div class="small" style="margin-top:4px;white-space:normal">${esc(d.note)}</div>` : "")));
+    hit.addEventListener("mouseleave", hideTip);
+  });
+  el("line", { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0), stroke: "var(--text-muted)" }, svg);
+  const last = M[M.length - 1];
+  el("text", { x: W - m.r, y: y(base(last)) - 8, "text-anchor": "end", class: "lbl" }, svg).textContent = fmt(base(last), 0) + " €";
+  const si = M.findIndex(d => d.m === DATA.start);
+  if (si >= 0 && si < M.length - 6)
+    el("text", { x: m.l + si * bw + bw / 2, y: y(base(M[si])) - 8, "text-anchor": "middle", class: "lbl" }, svg).textContent = fmt(base(M[si]), 0) + " €";
+}
+
+function drawEvents() {
+  const f = frame("c-events", 300); if (!f || !EVENTS.length) return;
+  const { svg, W, H } = f;
+  const m = { l: 44, r: 8, t: 22, b: 44 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const hi = Math.max(0, ...EVENTS.map(e => Math.max(e.dT, e.dU, e.dT + e.dU)));
+  const lo = Math.min(0, ...EVENTS.map(e => Math.min(e.dT, e.dU)));
+  const step = niceStep(hi - lo, 4);
+  const ymax = Math.ceil(hi * 1.12 / step) * step, ymin = Math.floor(lo / step) * step;
+  const y = v => m.t + ((ymax - v) / (ymax - ymin)) * ih;
+  for (let v = ymin; v <= ymax + 1e-9; v += step) {
+    el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: v === 0 ? "var(--text-muted)" : "var(--grid)" }, svg);
+    el("text", { x: m.l - 6, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = v === 0 ? "0" : signed(v);
+  }
+  const gw = iw / EVENTS.length, bw = Math.min(22, gw * 0.32);
+  EVENTS.forEach((ev, i) => {
+    const cx = m.l + i * gw + gw / 2;
+    [["--series-1", ev.dT, cx - bw - 1], ["--series-2", ev.dU, cx + 1]].forEach(([c, v, x]) => {
+      if (v !== 0) el("path", { d: barPath(x, y(0), bw, y(v)), fill: `var(${c})` }, svg);
+    });
+    const net = ev.dT + ev.dU;
+    el("text", { x: cx, y: y(Math.max(ev.dT, ev.dU, 0)) - 6, "text-anchor": "middle", class: "lbl" }, svg).textContent = signed(Math.round(net));
+    el("text", { x: cx, y: H - 24, "text-anchor": "middle" }, svg).textContent = ev.m;
+    el("text", { x: cx, y: H - 10, "text-anchor": "middle", style: "font-size:10px" }, svg).textContent = gw > 70 ? ev.t : "";
+    const hit = el("rect", { x: m.l + i * gw, y: m.t, width: gw, height: ih, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => showTip(e,
+      `<b>${ev.m} · ${esc(ev.t)}</b><br>` + row("--series-1", "Δ Tarifentgelt", signed(ev.dT) + " €") +
+      row("--series-2", "Δ ÜT", signed(ev.dU) + " €") + plainRow("Δ Summe", signed(net) + " €")));
+    hit.addEventListener("mouseleave", hideTip);
+  });
+}
+
+function drawYearly() {
+  const f = frame("c-yearly", 280); if (!f) return;
+  const { svg, W, H } = f;
+  const m = { l: 52, r: 8, t: 24, b: 28 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const ymax = niceMax(Math.max(...YEARS.map(d => d.total)), 4), y = v => m.t + ih - (v / ymax) * ih;
+  const step = niceStep(ymax, 4);
+  for (let v = 0; v <= ymax + 1e-9; v += step) {
+    el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: "var(--grid)" }, svg);
+    el("text", { x: m.l - 6, y: y(v) + 4, "text-anchor": "end" }, svg).textContent = fmt(v / 1000, 0) + " T";
+  }
+  const gw = iw / YEARS.length, bw = Math.min(64, gw * 0.55);
+  YEARS.forEach((d, i) => {
+    const x = m.l + i * gw + (gw - bw) / 2;
+    const segs = [["--series-1", d.base], ["--series-2", d.uw], ["--series-3", d.other]].filter(s => s[1] > 0.5);
+    let acc = 0;
+    segs.forEach(([c, v], j) => stackSeg(svg, c, x, bw, y(acc), y(acc += v), j === segs.length - 1));
+    el("text", { x: x + bw / 2, y: y(d.total) - 6, "text-anchor": "middle", class: "lbl" }, svg).textContent = fmt(d.total, 0) + " €";
+    el("text", { x: x + bw / 2, y: H - 8, "text-anchor": "middle" }, svg).textContent = d.y + (d.n < 12 ? ` (${d.n} M.)` : "");
+    const hit = el("rect", { x: m.l + i * gw, y: m.t, width: gw, height: ih, fill: "transparent" }, svg);
+    hit.addEventListener("mousemove", e => showTip(e, `<b>${d.y}</b>${d.n < 12 ? ` · ${d.n} Monate` : ""}<br>` +
+      row("--series-1", "Laufendes Grundgehalt", eur(d.base)) + row("--series-2", "Urlaubs-/Weihnachtsgeld", eur(d.uw)) +
+      row("--series-3", "Sonstiges", eur(d.other)) + plainRow("Gesamtbrutto", eur(d.total))));
+    hit.addEventListener("mouseleave", hideTip);
+  });
+  el("line", { x1: m.l, x2: W - m.r, y1: y(0), y2: y(0), stroke: "var(--text-muted)" }, svg);
+}
+
+function drawAll() { drawMonthly(); drawEvents(); drawYearly(); }
+drawAll();
+let rt; window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(drawAll, 120); });
+</script>
+</body>
+</html>
